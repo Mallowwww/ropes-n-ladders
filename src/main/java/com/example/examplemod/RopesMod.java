@@ -26,8 +26,7 @@ public class RopesMod {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
-
-
+        
     }
 
     @SubscribeEvent
