@@ -1,14 +1,17 @@
 package com.mallowhorton.ropesnladders.entities;
 
 import com.mallowhorton.ropesnladders.RopesMod;
+import com.mallowhorton.ropesnladders.mixins.PlayerMixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.entity.EntitySubLevelUtil;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.mixinterface.plot.SubLevelContainerHolder;
+import dev.ryanhcode.sable.physics.impl.rapier.Rapier3D;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.simulated_team.simulated.content.entities.launched_plunger.LaunchedPlungerEntityRenderer;
+import dev.simulated_team.simulated.util.SimMathUtils;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -20,13 +23,17 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ThrowableProjectile;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import org.joml.*;
 
+import java.lang.Math;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,7 +45,7 @@ public class HookEntity extends ThrowableProjectile {
     public static final EntityDataAccessor<Optional<UUID>> PLAYER = SynchedEntityData.defineId(HookEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     public static final EntityDataAccessor<BlockPos> STUCK_BLOCK_POS = SynchedEntityData.defineId(HookEntity.class, EntityDataSerializers.BLOCK_POS);
     private int timesStale = 0;
-    private float goalDistance = 4f;
+//    private float goalDistance = 4f;
     public HookEntity(EntityType<? extends ThrowableProjectile> entityType, Level level) {
         super(entityType, level);
 
@@ -56,7 +63,11 @@ public class HookEntity extends ThrowableProjectile {
 //        super.onHit(result);
         entityData.set(IS_STUCK, true);
         this.setDeltaMovement(Vec3.ZERO);
-        this.setPos(result.getLocation());
+        var added = Vec3.ZERO;
+        if (Sable.HELPER.isInPlotGrid(this))
+            added = new Vec3(result.getDirection().step().mul(.1f));
+
+        this.setPos(result.getLocation().add(added));
     }
 
 
@@ -79,6 +90,26 @@ public class HookEntity extends ThrowableProjectile {
         var sublevel = Sable.HELPER.getContaining(this);
 //        if (level().isClientSide) return;
 
+        // Handle player stuff
+
+        entityData.get(PLAYER).ifPresent(uuid -> {
+            var player = level().getPlayerByUUID(uuid);
+            if (player == null) return;
+            int t = 0;
+            if (player.isShiftKeyDown())
+                t--;
+            if (((PlayerMixin) player).ropes_n_ladders$getJumping())
+                t++;
+            if (t == 1) {
+                RopesMod.LOOKUP.decreaseTargetDistance(uuid);
+            }
+            if (t == -1) {
+                RopesMod.LOOKUP.increaseTargetDistance(uuid);
+            }
+        });
+
+        // Handle movement stuff
+
         if (sublevel == null) {
             if (this.entityData.get(IS_STUCK)) {
                 this.setDeltaMovement(Vec3.ZERO);
@@ -100,8 +131,9 @@ public class HookEntity extends ThrowableProjectile {
                 entityData.get(PLAYER).ifPresent(uuid -> {
                     var player = level.getPlayerByUUID(uuid);
                     if (player == null) return;
-                    var factor = Math.log(player.position().distanceTo(this.position()) / goalDistance);
-                    player.addDeltaMovement(this.position().subtract(player.position()).normalize().scale(factor * .1f));
+                    var factor = Math.log(player.position().distanceTo(this.position()) / RopesMod.LOOKUP.hookTargetDistance(uuid));
+                    if (!player.getAbilities().flying)
+                        player.addDeltaMovement(this.position().subtract(player.position()).normalize().scale(factor * .1f));
                 });
 
             } else {
@@ -144,8 +176,9 @@ public class HookEntity extends ThrowableProjectile {
                     var player = level.getPlayerByUUID(uuid);
                     if (player == null) return;
                     var fixedPos = player.position().subtract(Sable.HELPER.projectOutOfSubLevel(level, position()));
-                    var factor = Math.log(player.position().distanceTo(Sable.HELPER.projectOutOfSubLevel(level, this.position())) / goalDistance);
-                    player.addDeltaMovement(fixedPos.normalize().scale(factor * .1f).reverse());
+                    var factor = Math.log(player.position().distanceTo(Sable.HELPER.projectOutOfSubLevel(level, this.position())) / RopesMod.LOOKUP.hookTargetDistance(uuid));
+                    if (!player.getAbilities().flying)
+                        player.addDeltaMovement(fixedPos.normalize().scale(factor * .1f).reverse());
 //                        System.out.printf("Testing: \n    %s\n    %s\n", sublevel.logicalPose().transformPosition(player.position()), position());
                     if (level.isClientSide) return;
                     if (!(sublevel instanceof ServerSubLevel serverSubLevel)) return;
@@ -153,6 +186,7 @@ public class HookEntity extends ThrowableProjectile {
                     if (!(plotC instanceof final ServerSubLevelContainer serverContainer)) return;
                     var phys = serverContainer.physicsSystem();
                     var handle = phys.getPhysicsHandle(serverSubLevel);
+
                     handle.applyImpulseAtPoint(
                             position(),
                             (
@@ -176,7 +210,7 @@ public class HookEntity extends ThrowableProjectile {
     }
 
     public static class Renderer extends EntityRenderer<HookEntity> {
-        public static final RenderType RENDER_TYPE = RenderType.entityCutout(ResourceLocation.parse("ropesnladders:hook"));
+        public static final RenderType RENDER_TYPE = RenderType.entityCutout(ResourceLocation.parse("ropesnladders:textures/hook.png"));
         public Renderer(EntityRendererProvider.Context context) {
             super(context);
         }
@@ -192,24 +226,49 @@ public class HookEntity extends ThrowableProjectile {
             Player player = p_entity.level().getPlayerByUUID(p_entity.entityData.get(HookEntity.PLAYER).get());
             if (player != null) {
                 poseStack.pushPose();
-                poseStack.pushPose();
                 poseStack.scale(0.5F, 0.5F, 0.5F);
+
+                if (Sable.HELPER.isInPlotGrid(p_entity)) {
+                    var sublevel = Sable.HELPER.getContaining(p_entity);
+                    var logicPose = sublevel.logicalPose();
+//                    poseStack.rotateAround(new Quaternionf(logicPose.orientation()), (float)logicPose.rotationPoint().x, (float)logicPose.rotationPoint().y, (float)logicPose.rotationPoint().z);
+                    var orientation = new Quaternionf(new Quaterniond(logicPose.orientation()).invert());
+
+//                    poseStack.rotateAround(orientation, (float)logicPose.rotationPoint().x, (float)logicPose.rotationPoint().y, (float)logicPose.rotationPoint().z);
+                    poseStack.rotateAround(orientation, 0, 1f, 0);
+                    poseStack.translate(0, .5f, 0);
+                    poseStack.mulPose(new Quaternionf(orientation));
+                }
                 poseStack.mulPose(this.entityRenderDispatcher.cameraOrientation());
+
                 PoseStack.Pose posestack$pose = poseStack.last();
                 VertexConsumer vertexconsumer = bufferSource.getBuffer(RENDER_TYPE);
                 vertex(vertexconsumer, posestack$pose, packedLight, 0.0F, 0, 0, 1);
                 vertex(vertexconsumer, posestack$pose, packedLight, 1.0F, 0, 1, 1);
                 vertex(vertexconsumer, posestack$pose, packedLight, 1.0F, 1, 1, 0);
                 vertex(vertexconsumer, posestack$pose, packedLight, 0.0F, 1, 0, 0);
-                poseStack.popPose();
 //                var lineBuffer = bufferSource.getBuffer(RenderType.lineStrip());
 //                var pose = poseStack.last();
 //                lineBuffer.addVertex((float)p_entity.position().x, (float)p_entity.position().y, (float)p_entity.position().z, 0xFFFFFFFF, 0, 0, 0, packedLight, 0, 0, 0);
 //                lineBuffer.addVertex(0, 0, 0, 0xFFFFFFFF, 0, 0, 1, packedLight, 0, 0, 0);
+                poseStack.scale(2, 2, 2);
+                var list = new LinkedList<Vec3>();
+                var playerPos = player.getPosition(partialTick).add(new Vec3(0, 1.3, 0));
+                var entityPos = p_entity.getPosition(partialTick);
+                list.add(entityPos.add(new Vec3(0, 0.1, 0)));
+                list.add(entityPos.add(new Vec3(0, 0.1, 0)));
+                for (int i = 2; i < 5; i++) {
+                    list.add(entityPos.lerp(playerPos, (float) i / 5)
+                            .add(new Vec3(
+                                    0, -((float) i - 4) * ((float) i - 4) / 4 * 0, 0
+                            )));
+
+                }
+
+                list.add(playerPos);
+                list.add(playerPos);
                 LaunchedPlungerEntityRenderer.renderRope(
-                        List.of(
-                                Vec3.ZERO, new Vec3(0, .1, 0), new Vec3(0, .2, 0), new Vec3(0, .3, 0)
-                        ), bufferSource, p_entity.level(), poseStack
+                        list, bufferSource, p_entity.level(), poseStack
                 );
                 poseStack.popPose();
             }

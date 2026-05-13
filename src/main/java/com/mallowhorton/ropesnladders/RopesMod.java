@@ -47,26 +47,38 @@ public class RopesMod {
 
     }
     public static class PlayerGrappleLookup {
-        public record Data(HookEntity entity, Vec3 hookPosition, boolean isHooked) {}
+        public record Data(HookEntity entity, Vec3 hookPosition, boolean isHooked, float targetDistance) {}
 
         private final HashMap<UUID, Data> map;
         private PlayerGrappleLookup() {
             map = new HashMap<>();
         }
         public void setHooked(UUID uuid, HookEntity entity) {
-            map.put(uuid, new Data(entity, entity.position(), true));
+            map.put(uuid, new Data(entity, entity.position(), true, 5));
         }
         public void setUnhooked(UUID uuid) {
-            map.put(uuid, new Data(null, null, false));
+            map.put(uuid, new Data(null, null, false, 0));
         }
         public boolean isHooked(UUID uuid) {
-            return map.getOrDefault(uuid, new Data(null, null, false)).isHooked;
+            return map.getOrDefault(uuid, new Data(null, null, false, 0)).isHooked;
         }
         public Vec3 hookPos(UUID uuid) {
-            return map.getOrDefault(uuid, new Data(null, null, false)).hookPosition;
+            return map.getOrDefault(uuid, new Data(null, null, false, 0)).hookPosition;
         }
         public HookEntity hookEntity(UUID uuid) {
-            return map.getOrDefault(uuid, new Data(null, null, false)).entity;
+            return map.getOrDefault(uuid, new Data(null, null, false, 0)).entity;
+        }
+        public float hookTargetDistance(UUID uuid) {
+            return map.getOrDefault(uuid, new Data(null, null, false, 0)).targetDistance;
+        }
+        public void increaseTargetDistance(UUID uuid) {
+            var old = map.getOrDefault(uuid, new Data(null, null, false, 0));
+            map.put(uuid, new Data(old.entity, old.hookPosition, old.isHooked, old.targetDistance+.06f));
+        }
+        public void decreaseTargetDistance(UUID uuid) {
+            var old = map.getOrDefault(uuid, new Data(null, null, false, 0));
+            if (old.targetDistance <= 2) return;
+            map.put(uuid, new Data(old.entity, old.hookPosition, old.isHooked, old.targetDistance-.06f));
         }
         public Iterable<Pair<UUID, HookEntity>> iterable() {
             return map.entrySet().stream().map(e -> new Pair<>(e.getKey(), e.getValue().entity)).filter(p -> p.getSecond() != null).toList();
