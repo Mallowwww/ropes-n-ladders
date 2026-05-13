@@ -28,18 +28,26 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
-    exclusiveContent { // Sable
-        forRepository {
-            maven {
-                url = "https://maven.ryanhcode.dev/releases"
-                name = "RyanHCode Maven"
-            }
-        }
-        filter {
-            includeGroup("dev.ryanhcode.sable")
-            includeGroup("dev.ryanhcode.sable-companion")
-        }
+//    exclusiveContent { // Sable
+//        forRepository {
+//            maven {
+//                url = "https://maven.ryanhcode.dev/releases"
+//                name = "RyanHCode Maven"
+//            }
+//        }
+//        filter {
+//            includeGroup("dev.ryanhcode.sable")
+//            includeGroup("dev.ryanhcode.sable-companion")
+//        }
+//    }
+    maven {
+        url = "https://maven.ryanhcode.dev/releases"
     }
+    maven {
+        name = "Illusive Soulworks maven"
+        url = "https://maven.theillusivec4.top/"
+    }
+    flatDir { dirs("libs") }
     maven { url = "https://maven.createmod.net" }     // Create, Ponder, Flywheel
     maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
     maven {
@@ -47,8 +55,16 @@ repositories {
         url = 'https://maven.blamejared.com'
     }
     maven {
+        name = 'Squid Dev'
+        url = 'https://maven.squiddev.cc'
+    }
+    maven {
         name = "Fuzs Mod Resources"
         url = "https://raw.githubusercontent.com/Fuzss/modresources/main/maven/"
+    }
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
     }
 }
 
@@ -145,7 +161,10 @@ dependencies {
             prefer project.sable_companion_version
         }
     }
-    implementation files("libs/create-aeronautics-bundled-1.21.1-1.2.1.jar")
+//    implementation (("blank:create-aeronautics-bundled-1.21.1:1.2.1"))
+    implementation "dev.eriksonn.aeronautics:aeronautics-neoforge-1.21.1:1.2.1"
+    implementation "dev.ryanhcode.offroad:offroad-neoforge-1.21.1:1.2.1"
+    implementation "dev.simulated_team.simulated:simulated-neoforge-1.21.1:1.2.1"
     implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") {
         transitive = false
     }
@@ -153,7 +172,7 @@ dependencies {
     compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
     runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}")
     implementation("com.tterrag.registrate:Registrate:${registrate_version}")
-    implementation "dev.ryanhcode.sable:sable-common-1.21.1:[1.2.1,)"
+//    implementation "dev.ryanhcode.sable:sable-common-1.21.1:[1.2.1,)"
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
