@@ -3,6 +3,8 @@ package com.mallowhorton.ropesnladders;
 import com.mallowhorton.ropesnladders.entities.HookEntity;
 import com.mojang.datafixers.util.Pair;
 import com.simibubi.create.foundation.data.CreateRegistrate;
+import dev.ryanhcode.sable.sublevel.SubLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
@@ -18,6 +20,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.UUID;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
@@ -26,7 +29,8 @@ public class RopesMod {
     public static final String MODID = "ropesnladders";
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final CreateRegistrate REGISTRATE = new RopeRegistrate(MODID);
-    public static final PlayerGrappleLookup LOOKUP = new PlayerGrappleLookup();
+    public static final PlayerGrappleProjectileLookup PROJECTILE_LOOKUP = new PlayerGrappleProjectileLookup();
+    public static final PlayerActiveGrappleLookup ACTIVE_GRAPPLE_LOOKUP = new PlayerActiveGrappleLookup();
 
     public RopesMod(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(this::commonSetup);
@@ -34,7 +38,9 @@ public class RopesMod {
         NeoForge.EVENT_BUS.register(this);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         ModItems.register(modEventBus);
+        ModBlocks.init();
         ModEntities.init();
+
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
@@ -46,11 +52,42 @@ public class RopesMod {
 
 
     }
-    public static class PlayerGrappleLookup {
+    public static class PlayerActiveGrappleLookup {
+        public record Data(SubLevel playerLevel, Optional<SubLevel> grappleSubLevel, Optional<Level> grappleLevel) {}
+
+        private final HashMap<UUID, Data> map;
+        public PlayerActiveGrappleLookup() {
+            map = new HashMap<>();
+        }
+        public void unhook(UUID uuid) {
+            var data = map.remove(uuid);
+            data.playerLevel.markRemoved();
+        }
+        public void grapple(UUID uuid, SubLevel playerLevel, SubLevel grappleSubLevel) {
+            map.put(uuid, new Data(playerLevel, Optional.of(grappleSubLevel), Optional.empty()));
+        }
+        public void grapple(UUID uuid, SubLevel playerLevel, Level grappleLevel) {
+            map.put(uuid, new Data(playerLevel, Optional.empty(), Optional.of(grappleLevel)));
+        }
+        public boolean isGrappledToSubLevel(UUID uuid) {
+            return map.containsKey(uuid) && map.get(uuid).grappleSubLevel.isPresent();
+        }
+        public Optional<SubLevel> grappleSubLevel(UUID uuid) {
+            return map.containsKey(uuid) ? map.get(uuid).grappleSubLevel : Optional.empty();
+        }
+        public Optional<Level> grappleLevel(UUID uuid) {
+            return map.containsKey(uuid) ? map.get(uuid).grappleLevel : Optional.empty();
+        }
+        public SubLevel playerLevel(UUID uuid) {
+            return map.containsKey(uuid) ? map.get(uuid).playerLevel : null;
+        }
+    }
+
+    public static class PlayerGrappleProjectileLookup {
         public record Data(HookEntity entity, Vec3 hookPosition, boolean isHooked, float targetDistance) {}
 
         private final HashMap<UUID, Data> map;
-        private PlayerGrappleLookup() {
+        private PlayerGrappleProjectileLookup() {
             map = new HashMap<>();
         }
         public void setHooked(UUID uuid, HookEntity entity) {

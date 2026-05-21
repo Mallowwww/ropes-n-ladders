@@ -1,49 +1,51 @@
 package com.mallowhorton.ropesnladders.entities;
 
+import com.mallowhorton.ropesnladders.ModBlocks;
 import com.mallowhorton.ropesnladders.RopesMod;
-import com.mallowhorton.ropesnladders.mixins.PlayerMixin;
+import com.mallowhorton.ropesnladders.blocks.PlayerGrappleHelperBlock;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.simibubi.create.content.contraptions.AssemblyException;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.SubLevelHelper;
+import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
 import dev.ryanhcode.sable.api.entity.EntitySubLevelUtil;
-import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
-import dev.ryanhcode.sable.mixinterface.plot.SubLevelContainerHolder;
+import dev.ryanhcode.sable.companion.SableCompanion;
 import dev.ryanhcode.sable.physics.impl.rapier.Rapier3D;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
+import dev.ryanhcode.sable.sublevel.SubLevel;
+import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
+import dev.simulated_team.simulated.content.blocks.rope.RopeStrandHolderBlockEntity;
+import dev.simulated_team.simulated.content.blocks.rope.rope_connector.RopeConnectorBlock;
 import dev.simulated_team.simulated.content.entities.launched_plunger.LaunchedPlungerEntityRenderer;
-import dev.simulated_team.simulated.util.SimMathUtils;
+import dev.simulated_team.simulated.index.SimBlocks;
+import dev.simulated_team.simulated.util.SimAssemblyHelper;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ThrowableProjectile;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.joml.*;
 
-import java.lang.Math;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HookEntity extends ThrowableProjectile {
 //    private boolean stuck = false;
-    public static final EntityDataAccessor<Boolean> IS_STUCK = SynchedEntityData.defineId(HookEntity.class, EntityDataSerializers.BOOLEAN);
     public static final EntityDataAccessor<Optional<UUID>> PLAYER = SynchedEntityData.defineId(HookEntity.class, EntityDataSerializers.OPTIONAL_UUID);
-    public static final EntityDataAccessor<BlockPos> STUCK_BLOCK_POS = SynchedEntityData.defineId(HookEntity.class, EntityDataSerializers.BLOCK_POS);
     private int timesStale = 0;
 //    private float goalDistance = 4f;
     public HookEntity(EntityType<? extends ThrowableProjectile> entityType, Level level) {
@@ -53,21 +55,67 @@ public class HookEntity extends ThrowableProjectile {
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
-        builder.define(IS_STUCK, false);
         builder.define(PLAYER, Optional.of(UUID.randomUUID()));
-        builder.define(STUCK_BLOCK_POS, BlockPos.ZERO);
     }
 
     @Override
     protected void onHitBlock(BlockHitResult result) {
 //        super.onHit(result);
-        entityData.set(IS_STUCK, true);
         this.setDeltaMovement(Vec3.ZERO);
-        var added = Vec3.ZERO;
-        if (Sable.HELPER.isInPlotGrid(this))
-            added = new Vec3(result.getDirection().step().mul(.1f));
+        moveTo(result.getLocation());
+        var uuidOpt = entityData.get(PLAYER);
+        if (uuidOpt.isEmpty()) {
+            remove(RemovalReason.DISCARDED);
+            RopesMod.LOGGER.atInfo().log("Discarded because there is no table entry for this player");
+        }
+        uuidOpt.ifPresent(uuid -> {
+            var player = level().getPlayerByUUID(uuid);
+            if (player == null) {
+                remove(RemovalReason.DISCARDED);
+                RopesMod.LOGGER.atInfo().log("Discarded because this player does not exist");
 
-        this.setPos(result.getLocation().add(added));
+                return;
+            }
+            player.swing(InteractionHand.MAIN_HAND);
+            if (Sable.HELPER.isInPlotGrid(this)) {
+
+            } else {
+                var airPos = result.getBlockPos().relative(result.getDirection());
+                var state = level().getBlockState(airPos);
+                if (state.canBeReplaced()) {
+                    level().setBlockAndUpdate(airPos, SimBlocks.ROPE_CONNECTOR.getDefaultState().setValue(RopeConnectorBlock.FACING, result.getDirection()));
+                    level().setBlockAndUpdate(player.blockPosition(), ModBlocks.PLAYER_GRAPPLE_HELPER_BLOCK.getDefaultState());
+                    try {
+                        if (level().isClientSide) {
+                            var sublevel = RopesMod.ACTIVE_GRAPPLE_LOOKUP.playerLevel(player.getUUID());
+                            if (sublevel != null) {
+//                                player.moveTo(sublevel.getPlot().getCenterBlock().getCenter());
+                                var blockEntityActor = sublevel.getPlot().getBlockEntityActors().iterator().next();
+                                if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
+                                blockEntity.trackingPlayer = player;
+                            }
+                            return;
+                        };
+                        var assemblyResult = SimAssemblyHelper.assembleFromSingleBlock(
+                                level(), player.blockPosition(), player.blockPosition(), true, false
+                        );
+                        var blockEntityActor = assemblyResult.subLevel().getPlot().getBlockEntityActors().iterator().next();
+                        if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
+                        blockEntity.trackingPlayer = player;
+                        ((RopeStrandHolderBlockEntity)level().getBlockEntity(airPos)).getBehavior().createRope(blockEntity.getBehavior());
+                        RopesMod.ACTIVE_GRAPPLE_LOOKUP.grapple(player.getUUID(), assemblyResult.subLevel(), player.level());
+                        if (!(assemblyResult.subLevel() instanceof ServerSubLevel serverSubLevel)) return;
+
+                        serverSubLevel.getTrackingPlayers().add(player.getUUID());
+
+                    } catch (AssemblyException e) {
+                        RopesMod.LOGGER.atError().log("Failed to assemble player sublevel!");
+                    }
+                }
+                remove(RemovalReason.DISCARDED);
+            }
+        });
+
     }
 
 
@@ -76,7 +124,7 @@ public class HookEntity extends ThrowableProjectile {
         super.tick();
 
         var isStale = new AtomicBoolean(true);
-        RopesMod.LOOKUP.iterable().forEach(p -> {
+        RopesMod.PROJECTILE_LOOKUP.iterable().forEach(p -> {
             if (p.getSecond().getUUID().equals(this.uuid))
                 isStale.set(false);
         });
@@ -87,125 +135,8 @@ public class HookEntity extends ThrowableProjectile {
             return;
         } else
             timesStale = 0;
-        var sublevel = Sable.HELPER.getContaining(this);
-//        if (level().isClientSide) return;
 
-        // Handle player stuff
 
-        entityData.get(PLAYER).ifPresent(uuid -> {
-            var player = level().getPlayerByUUID(uuid);
-            if (player == null) return;
-            int t = 0;
-            if (player.isShiftKeyDown())
-                t--;
-            if (((PlayerMixin) player).ropes_n_ladders$getJumping())
-                t++;
-            if (t == 1) {
-                RopesMod.LOOKUP.decreaseTargetDistance(uuid);
-            }
-            if (t == -1) {
-                RopesMod.LOOKUP.increaseTargetDistance(uuid);
-            }
-        });
-
-        // Handle movement stuff
-
-        if (sublevel == null) {
-            if (this.entityData.get(IS_STUCK)) {
-                this.setDeltaMovement(Vec3.ZERO);
-                AtomicBoolean flag = new AtomicBoolean(false);
-                var level = level();
-                var col = level.getBlockCollisions(this, this.getBoundingBox());
-                col.forEach(voxelShape -> {
-                    var pos = voxelShape.bounds().getCenter();
-                    var bPos = BlockPos.containing(pos.x, pos.y, pos.z);
-                    var block = level.getBlockState(bPos);
-                    if (!block.is(Blocks.AIR) && !flag.get()) {
-                        flag.set(true);
-                    }
-                });
-
-                if (!flag.get()) {
-                        entityData.set(IS_STUCK, false);
-                }
-                entityData.get(PLAYER).ifPresent(uuid -> {
-                    var player = level.getPlayerByUUID(uuid);
-                    if (player == null) return;
-                    var factor = Math.log(player.position().distanceTo(this.position()) / RopesMod.LOOKUP.hookTargetDistance(uuid));
-                    if (!player.getAbilities().flying)
-                        player.addDeltaMovement(this.position().subtract(player.position()).normalize().scale(factor * .1f));
-                });
-
-            } else {
-//                    this.addDeltaMovement(new Vec3(0, -0.2, 0));
-                var level = level();
-//                var col = level.getBlockCollisions(this, this.getBoundingBox());
-//                AtomicBoolean flag = new AtomicBoolean(false);
-//                col.forEach(voxelShape -> {
-//                    var pos = voxelShape.bounds().getCenter();
-//                    var bPos = BlockPos.containing(pos.x, pos.y, pos.z);
-//                    var block = level.getBlockState(bPos);
-//                    if (!block.is(Blocks.AIR) && !flag.get()) {
-//                        flag.set(true);
-//                        entityData.set(STUCK_BLOCK_POS, bPos);
-//                        entityData.set(IS_STUCK, true);
-//                        entityData.get(PLAYER).ifPresent(uuid -> {
-//                            var player = level.getPlayerByUUID(uuid);
-//                            if (player == null) return;
-//                            player.swing(InteractionHand.MAIN_HAND);
-//                            player.addDeltaMovement(this.position().subtract(player.position()).normalize().scale(.2f));
-//                        });
-////                            System.out.printf("Found a block to stick to! %s%n", bPos);
-//                    }
-//                });
-            }
-
-        } else {
-
-            // Check if we're already stuck
-            if (this.entityData.get(IS_STUCK)) {
-                this.setDeltaMovement(Vec3.ZERO);
-                var level = level();
-//                if (level.isClientSide) return;
-
-                if (!(this.level() instanceof final SubLevelContainerHolder holder)) {
-                    return;
-                }
-
-                entityData.get(PLAYER).ifPresent(uuid -> {
-                    var player = level.getPlayerByUUID(uuid);
-                    if (player == null) return;
-                    var fixedPos = player.position().subtract(Sable.HELPER.projectOutOfSubLevel(level, position()));
-                    var factor = Math.log(player.position().distanceTo(Sable.HELPER.projectOutOfSubLevel(level, this.position())) / RopesMod.LOOKUP.hookTargetDistance(uuid));
-                    if (!player.getAbilities().flying)
-                        player.addDeltaMovement(fixedPos.normalize().scale(factor * .1f).reverse());
-//                        System.out.printf("Testing: \n    %s\n    %s\n", sublevel.logicalPose().transformPosition(player.position()), position());
-                    if (level.isClientSide) return;
-                    if (!(sublevel instanceof ServerSubLevel serverSubLevel)) return;
-                    var plotC = holder.sable$getPlotContainer();
-                    if (!(plotC instanceof final ServerSubLevelContainer serverContainer)) return;
-                    var phys = serverContainer.physicsSystem();
-                    var handle = phys.getPhysicsHandle(serverSubLevel);
-
-                    handle.applyImpulseAtPoint(
-                            position(),
-                            (
-                                    sublevel.logicalPose().transformPositionInverse(player.position())
-                            ).subtract(
-                                    position()
-                            ).normalize().scale(.2f * factor).yRot((float) Math.PI / 4f * 0));
-//                        handle.applyImpulseAtPoint(
-//                                position(),
-//                                new Vec3(0, 0, .1f)
-//                        );
-                });
-
-            } else {
-                // If we're unstuck but in a sublevel, that's a problem
-                EntitySubLevelUtil.kickEntity(sublevel, this);
-
-            }
-        }
 
     }
 

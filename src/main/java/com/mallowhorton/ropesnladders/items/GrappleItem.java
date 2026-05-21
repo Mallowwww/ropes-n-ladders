@@ -22,31 +22,31 @@ public class GrappleItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand usedHand) {
 //        return super.use(level, player, usedHand);
         player.swing(usedHand);
-//        System.out.println("Hit!");
-        if (RopesMod.LOOKUP.isHooked(player.getUUID())) {
-//            System.out.println("Already has hook");
+        System.out.println("Hit!");
+        if (RopesMod.PROJECTILE_LOOKUP.isHooked(player.getUUID())) {
+            System.out.println("Already has hook");
             if (level.isClientSide)
                 return InteractionResultHolder.success(player.getItemInHand(usedHand));
 
-            RopesMod.LOOKUP.hookEntity(player.getUUID()).remove(Entity.RemovalReason.DISCARDED);
-            RopesMod.LOOKUP.setUnhooked(player.getUUID());
+            RopesMod.PROJECTILE_LOOKUP.hookEntity(player.getUUID()).remove(Entity.RemovalReason.DISCARDED);
+            RopesMod.PROJECTILE_LOOKUP.setUnhooked(player.getUUID());
             player.swing(usedHand);
             return InteractionResultHolder.success(player.getItemInHand(usedHand));
         }
-//        System.out.println("Making new hook");
+        System.out.println("Making new hook");
 
         var hook = ModEntities.HOOK_ENTITY.create(level);
         if (hook == null) {
             return InteractionResultHolder.fail(player.getItemInHand(usedHand));
         }
-//        System.out.println("Successfully created hook");
+        System.out.println("Successfully created hook");
         level.addFreshEntity(hook);
         hook.getEntityData().set(HookEntity.PLAYER, Optional.of(player.getUUID()));
         hook.teleportTo(player.getX(), player.getY() + 1.5, player.getZ());
         var dir = player.getLookAngle();
         hook.addDeltaMovement(dir.scale(1f));
         if (!level.isClientSide)
-            RopesMod.LOOKUP.setHooked(player.getUUID(), hook);
+            RopesMod.PROJECTILE_LOOKUP.setHooked(player.getUUID(), hook);
         return InteractionResultHolder.success(player.getItemInHand(usedHand));
     }
 }
