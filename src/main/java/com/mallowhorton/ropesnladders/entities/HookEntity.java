@@ -1,25 +1,10 @@
 package com.mallowhorton.ropesnladders.entities;
 
-import com.mallowhorton.ropesnladders.ModBlocks;
 import com.mallowhorton.ropesnladders.RopesMod;
-import com.mallowhorton.ropesnladders.blocks.PlayerGrappleHelperBlock;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.simibubi.create.content.contraptions.AssemblyException;
 import dev.ryanhcode.sable.Sable;
-import dev.ryanhcode.sable.api.SubLevelHelper;
-import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
-import dev.ryanhcode.sable.api.entity.EntitySubLevelUtil;
-import dev.ryanhcode.sable.companion.SableCompanion;
-import dev.ryanhcode.sable.physics.impl.rapier.Rapier3D;
-import dev.ryanhcode.sable.sublevel.ServerSubLevel;
-import dev.ryanhcode.sable.sublevel.SubLevel;
-import dev.simulated_team.simulated.content.blocks.physics_assembler.PhysicsAssemblerBlock;
-import dev.simulated_team.simulated.content.blocks.rope.RopeStrandHolderBlockEntity;
-import dev.simulated_team.simulated.content.blocks.rope.rope_connector.RopeConnectorBlock;
 import dev.simulated_team.simulated.content.entities.launched_plunger.LaunchedPlungerEntityRenderer;
-import dev.simulated_team.simulated.index.SimBlocks;
-import dev.simulated_team.simulated.util.SimAssemblyHelper;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -29,7 +14,6 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ThrowableProjectile;
@@ -69,51 +53,51 @@ public class HookEntity extends ThrowableProjectile {
             RopesMod.LOGGER.atInfo().log("Discarded because there is no table entry for this player");
         }
         uuidOpt.ifPresent(uuid -> {
-            var player = level().getPlayerByUUID(uuid);
-            if (player == null) {
-                remove(RemovalReason.DISCARDED);
-                RopesMod.LOGGER.atInfo().log("Discarded because this player does not exist");
-
-                return;
-            }
-            player.swing(InteractionHand.MAIN_HAND);
-            if (Sable.HELPER.isInPlotGrid(this)) {
-
-            } else {
-                var airPos = result.getBlockPos().relative(result.getDirection());
-                var state = level().getBlockState(airPos);
-                if (state.canBeReplaced()) {
-                    level().setBlockAndUpdate(airPos, SimBlocks.ROPE_CONNECTOR.getDefaultState().setValue(RopeConnectorBlock.FACING, result.getDirection()));
-                    level().setBlockAndUpdate(player.blockPosition(), ModBlocks.PLAYER_GRAPPLE_HELPER_BLOCK.getDefaultState());
-                    try {
-                        if (level().isClientSide) {
-                            var sublevel = RopesMod.ACTIVE_GRAPPLE_LOOKUP.playerLevel(player.getUUID());
-                            if (sublevel != null) {
-//                                player.moveTo(sublevel.getPlot().getCenterBlock().getCenter());
-                                var blockEntityActor = sublevel.getPlot().getBlockEntityActors().iterator().next();
-                                if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
-                                blockEntity.trackingPlayer = player;
-                            }
-                            return;
-                        };
-                        var assemblyResult = SimAssemblyHelper.assembleFromSingleBlock(
-                                level(), player.blockPosition(), player.blockPosition(), true, false
-                        );
-                        var blockEntityActor = assemblyResult.subLevel().getPlot().getBlockEntityActors().iterator().next();
-                        if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
-                        blockEntity.trackingPlayer = player;
-                        ((RopeStrandHolderBlockEntity)level().getBlockEntity(airPos)).getBehavior().createRope(blockEntity.getBehavior());
-                        RopesMod.ACTIVE_GRAPPLE_LOOKUP.grapple(player.getUUID(), assemblyResult.subLevel(), player.level());
-                        if (!(assemblyResult.subLevel() instanceof ServerSubLevel serverSubLevel)) return;
-
-                        serverSubLevel.getTrackingPlayers().add(player.getUUID());
-
-                    } catch (AssemblyException e) {
-                        RopesMod.LOGGER.atError().log("Failed to assemble player sublevel!");
-                    }
-                }
-                remove(RemovalReason.DISCARDED);
-            }
+//            var player = level().getPlayerByUUID(uuid);
+//            if (player == null) {
+//                remove(RemovalReason.DISCARDED);
+//                RopesMod.LOGGER.atInfo().log("Discarded because this player does not exist");
+//
+//                return;
+//            }
+//            player.swing(InteractionHand.MAIN_HAND);
+//            if (Sable.HELPER.isInPlotGrid(this)) {
+//
+//            } else {
+//                var airPos = result.getBlockPos().relative(result.getDirection());
+//                var state = level().getBlockState(airPos);
+//                if (state.canBeReplaced()) {
+//                    level().setBlockAndUpdate(airPos, SimBlocks.ROPE_CONNECTOR.getDefaultState().setValue(RopeConnectorBlock.FACING, result.getDirection()));
+//                    level().setBlockAndUpdate(player.blockPosition(), ModBlocks.PLAYER_GRAPPLE_HELPER_BLOCK.getDefaultState());
+//                    try {
+//                        if (level().isClientSide) {
+//                            var sublevel = RopesMod.ACTIVE_GRAPPLE_LOOKUP.playerLevel(player.getUUID());
+//                            if (sublevel != null) {
+////                                player.moveTo(sublevel.getPlot().getCenterBlock().getCenter());
+//                                var blockEntityActor = sublevel.getPlot().getBlockEntityActors().iterator().next();
+//                                if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
+//                                blockEntity.trackingPlayer = player;
+//                            }
+//                            return;
+//                        };
+//                        var assemblyResult = SimAssemblyHelper.assembleFromSingleBlock(
+//                                level(), player.blockPosition(), player.blockPosition(), true, false
+//                        );
+//                        var blockEntityActor = assemblyResult.subLevel().getPlot().getBlockEntityActors().iterator().next();
+//                        if (!(blockEntityActor instanceof PlayerGrappleHelperBlock.PlayerGrappleHelperBlockEntity blockEntity)) return;
+//                        blockEntity.trackingPlayer = player;
+//                        ((RopeStrandHolderBlockEntity)level().getBlockEntity(airPos)).getBehavior().createRope(blockEntity.getBehavior());
+//                        RopesMod.ACTIVE_GRAPPLE_LOOKUP.grapple(player.getUUID(), assemblyResult.subLevel(), player.level());
+//                        if (!(assemblyResult.subLevel() instanceof ServerSubLevel serverSubLevel)) return;
+//
+//                        serverSubLevel.getTrackingPlayers().add(player.getUUID());
+//
+//                    } catch (AssemblyException e) {
+//                        RopesMod.LOGGER.atError().log("Failed to assemble player sublevel!");
+//                    }
+//                }
+//                remove(RemovalReason.DISCARDED);
+//            }
         });
 
     }
